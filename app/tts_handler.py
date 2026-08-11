@@ -50,6 +50,8 @@ class TTSHandler:
         self.disable_pcm_normalization = disable_pcm_normalization
         self.default_voice = default_voice
 
+        logging.info(f"Using default voice: {self.default_voice}")
+
         self.cleanup_cache()
         self.processor, self.whisper_model = self.load_whisper_model()
         self.vocoder = load_vocoder()
@@ -130,7 +132,7 @@ class TTSHandler:
                         model_path = os.path.join(voice_dir, "model_1200000.safetensors")
                         if not os.path.exists(model_path):
                             model_path = os.path.join(voice_dir, "model_1200000.pt")
-                
+
                 logging.debug(f"Checking for model file for voice {folder}: {model_path}, exists: {os.path.exists(model_path)}")
                 if os.path.exists(model_path):
                     self.available_models[folder] = model_path
@@ -181,7 +183,7 @@ class TTSHandler:
         """
         if voice_name in self.loaded_models:
             del self.loaded_models[voice_name]
-            logging.info(f"Unloaded model for voice: {voice_name}")
+            logging.info(f"Unloaded model for voice '{voice_name}'")
             gc.collect()
             logging.info(f"Garbage collection triggered after unloading '{voice_name}'.")
         else:
@@ -348,6 +350,53 @@ class TTSHandler:
         logging.debug(f"Transcription result: {transcription}")
         return transcription
 
+    def transcribe_file(self, audio_input_or_path, sample_rate=None):
+        """
+        Transcribes an arbitrary audio file using Whisper.
+
+        Args:
+            audio_input_or_path (str | np.ndarray): Path to the input audio file OR raw audio data.
+            sample_rate (int, optional): Sample rate of the audio if audio_input_or_path is raw data.
+
+        Returns:
+            str: Transcription text.
+        """
+        logging.info(f"Transcribing audio...")
+
+        # Determine if we received a path or raw audio data
+        if isinstance(audio_input_or_path, (str, bytes)):
+            if isinstance(audio_input_or_path, bytes):
+                import io
+                audio_input, sample_rate = sf.read(io.BytesIO(audio_input_or_path), format='PCM', dtype='int16')
+                logging.debug(f"Audio loaded from raw bytes with sample rate {sample_rate}")
+            else:
+                audio_input, sample_rate = sf.read(audio_input_or_path)
+                logging.debug(f"Audio loaded from {audio_input_or_path} with sample rate {sample_rate}")
+
+        elif isinstance(audio_input_or_path, np.ndarray):
+            audio_input = audio_input_or_path
+            if sample_rate is None:
+                sample_rate = 16000
+            logging.debug(f"Audio loaded from raw array with sample rate {sample_rate}")
+
+        else:
+            raise ValueError("audio_input_or_path must be a file path (str), bytes, or numpy array")
+
+        # Resample to 16kHz if needed (Whisper expects 16000 Hz)
+        if sample_rate != 16000:
+            audio_input = librosa.resample(audio_input, orig_sr=sample_rate, target_sr=16000)
+            logging.debug(f"Resampled to 16000 Hz from {sample_rate} Hz")
+
+        # Process audio as input features for Whisper
+        inputs = self.processor(audio_input, sampling_rate=16000, return_tensors="pt").input_features.to(self.device)
+
+        with torch.no_grad():
+            generated_ids = self.whisper_model.generate(inputs)
+
+        transcription = self.processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
+        logging.debug(f"Transcription result: {transcription}")
+        return transcription
+
     def infer(self, gen_text, voice_name, model, speed, nfe_step, cfg_strength):
         """
         Generates speech using F5-TTS based on provided text and voice.
@@ -357,7 +406,7 @@ class TTSHandler:
             voice_name (str): Voice name.
             model: Loaded model object.
             speed (float): Speed adjustment factor.
-            nfe_step (float): Steps to denoise
+            nfe_step (int): Steps to denoise
             cfg_strength (float): Guidance strength
 
         Returns:
@@ -387,7 +436,7 @@ class TTSHandler:
             logging.error(f"Error during inference process: {e}")
             raise RuntimeError("Failed to generate speech.")
 
-    def generate_speech(self, text, voice='Emilia', response_format='mp3', speed=1.0, nfe_step=32.0,
+    def generate_speech(self, text, voice='Emilia', response_format='mp3', speed=1.0, nfe_step=32,
             cfg_strength=2.0):
         """
         Generates and saves speech audio from text for a specific voice.
@@ -397,7 +446,7 @@ class TTSHandler:
             voice (str): Voice name.
             response_format (str): Audio format (e.g., 'mp3').
             speed (float): Speed adjustment factor.
-            nfe_step (float): Steps to denoise
+            nfe_step (int): Steps to denoise
             cfg_strength (float): Guidance strength
 
         Returns:

@@ -10,7 +10,8 @@ load_dotenv()
 
 # Simple test parameters
 text = "Hello, this is a test."
-voice = "Emilia"
+voice = os.getenv('DEFAULT_VOICE', 'Emilia')
+
 response_format = "mp3"
 speed = 1.0
 

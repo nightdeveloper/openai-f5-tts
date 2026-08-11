@@ -324,6 +324,43 @@ Lists all supported voices, regardless of language.
 - **Headers**: `Authorization: Bearer <API_KEY>`
 - **Response**: JSON containing all supported voices.
 
+### `/v1/audio/transcriptions`
+
+Transcribes audio input (e.g., `.wav`, `.mp3`, `.flac`) and returns the text content. Uses Whisper model for transcription.
+
+- **URL**: `/v1/audio/transcriptions`
+- **Method**: `POST`
+- **Headers**: `Authorization: Bearer <API_KEY>`
+- **Data (multipart/form-data)**:
+  - `file`: Audio file to transcribe (e.g., `.wav`, `.mp3`, `.flac`)
+- **Alternative Data (JSON body)**:
+  - `audio_file` (string, base64-encoded): Raw audio data encoded as base64 string
+- **Response**: JSON containing the transcribed text.
+
+**Example (multipart/form-data with curl):**
+
+```bash
+curl http://localhost:9090/v1/audio/transcriptions \
+     -H "Authorization: Bearer <API_KEY>" \
+     -H "Content-Type: multipart/form-data" \
+     -F "file=@C:\path\to\speech.wav"
+```
+
+**Example (JSON body with base64):**
+
+```bash
+curl http://localhost:9090/v1/audio/transcriptions \
+     -H "Authorization: Bearer <API_KEY>" \
+     -H "Content-Type: application/json" \
+     -d '{"audio_file": "<base64_encoded_audio_data>"}' > output.json
+```
+
+**Response:**
+
+```json
+{"text": "This is the transcribed audio content."}
+```
+
 ---
 
 ## Adding Your Own Fine-Tuned Checkpoint
@@ -403,6 +440,7 @@ curl -X POST http://localhost:9090/v1/audio/speech \
 - [x] Expose OpenAI-compatible endpoint
 - [x] Fix Docker + CUDA compatibility
 - [x] Multiple voice models
+- [x] Add transcription endpoint (`/v1/audio/transcriptions`)
 - [ ] Add expression parsing for nuanced speech
 - [ ] Document usage for fine-tuned models
 - [ ] Enhance error handling and logging

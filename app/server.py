@@ -1,5 +1,6 @@
 import os
 import logging
+import soundfile as sf
 from flask import Flask, request, send_file, jsonify
 from gevent.pywsgi import WSGIServer
 from dotenv import load_dotenv
@@ -37,10 +38,15 @@ API_KEY = os.getenv('API_KEY', 'your_api_key_here')
 DEFAULT_VOICE = os.getenv('DEFAULT_VOICE', 'Emilia')
 DEFAULT_RESPONSE_FORMAT = os.getenv('DEFAULT_RESPONSE_FORMAT', 'mp3')
 DEFAULT_SPEED = float(os.getenv('DEFAULT_SPEED', 1.0))
-DEFAULT_NFE_STEP = float(os.getenv('DEFAULT_NFE_STEP', 32.0))
+DEFAULT_NFE_STEP = int(os.getenv('DEFAULT_NFE_STEP', 32))
 DEFAULT_CFG_STRENGTH = float(os.getenv('DEFAULT_CFG_STRENGTH', 2.0))
 DEBUG_MODE = os.getenv('DEBUG_MODE', 'false').lower() in ('true', '1', 'yes')
 PORT = args.port
+
+logging.info(f"Default voice = {DEFAULT_VOICE}")
+logging.info(f"Default speed = {DEFAULT_SPEED}")
+logging.info(f"Default nfe step = {DEFAULT_NFE_STEP}")
+logging.info(f"Default cfg strength = {DEFAULT_CFG_STRENGTH}")
 
 # Set up logging configuration
 if DEBUG_MODE:
@@ -97,7 +103,7 @@ def text_to_speech():
     voice = data.get('voice') or DEFAULT_VOICE  # Use DEFAULT_VOICE if not provided or empty
     response_format = data.get('response_format', DEFAULT_RESPONSE_FORMAT)
     speed = float(data.get('speed', DEFAULT_SPEED))
-    nfe_step = float(data.get('nfe_step', DEFAULT_NFE_STEP))
+    nfe_step = int(data.get('nfe_step', DEFAULT_NFE_STEP))
     cfg_strength = float(data.get('cfg_strength', DEFAULT_CFG_STRENGTH))
 
     # Determine MIME type based on response format
@@ -189,7 +195,61 @@ def get_loaded_models():
     loaded = list(tts_handler.loaded_models.keys())
     return jsonify({"loaded_models": loaded})
 
+@app.route('/v1/audio/transcriptions', methods=['POST'])
+@require_api_key
+def transcribe_audio():
+    """
+    Transcribe an audio file and return the text.
+
+    Accepts multipart/form-data with 'file' field (curl style):
+        curl ... -F "file=@path/to/speech.wav"
+
+    Or JSON body with base64-encoded audio:
+        {"audio_file": "<base64_encoded_audio>"}
+
+    Returns:
+        {"text": "transcribed text"}
+    """
+    import base64 as b64
+    import io
+    
+    audio_input = None
+    sample_rate = None
+    
+    # Handle multipart/form-data file upload (curl style: -F "file=@path/to/file.wav")
+    if 'file' in request.files:
+        uploaded_file = request.files['file']
+        file_bytes = uploaded_file.read()
+        try:
+            audio_input, sample_rate = sf.read(io.BytesIO(file_bytes))
+            logging.debug(f"Audio loaded from multipart upload with sample rate {sample_rate}")
+        except Exception as e:
+            return jsonify({"error": f"Failed to read audio file: {str(e)}"}), 400
+    
+    # Handle JSON body with base64-encoded audio
+    elif request.json and 'audio_file' in request.json:
+        try:
+            decoded_bytes = b64.b64decode(request.json['audio_file'])
+            audio_input, sample_rate = sf.read(io.BytesIO(decoded_bytes))
+            logging.debug(f"Audio loaded from base64 with sample rate {sample_rate}")
+        except Exception as e:
+            return jsonify({"error": f"Invalid base64 audio data: {str(e)}"}), 400
+    
+    else:
+        return jsonify({
+            "error": "Missing 'file' in multipart form or 'audio_file' in JSON body",
+            "hint": "Use curl ... -F \"file=@path/to/audio.wav\" or POST JSON with base64 audio data"
+        }), 400
+
+    try:
+        transcription = tts_handler.transcribe_file(audio_input, sample_rate)
+        return jsonify({"text": transcription})
+    except Exception as e:
+        logging.error(f"Transcription error: {e}")
+        return jsonify({"error": str(e)}), 500
+
 if __name__ == '__main__':
+    logging.info(f"Modded F5-TTS version 1.1.5")
     logging.info(f"F5-TTS API running on http://localhost:{PORT}")
     # Start the server using Gevent WSGI server for better concurrency support
     http_server = WSGIServer(('0.0.0.0', PORT), app)

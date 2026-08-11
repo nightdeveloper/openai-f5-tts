@@ -348,7 +348,7 @@ class TTSHandler:
         logging.debug(f"Transcription result: {transcription}")
         return transcription
 
-    def infer(self, gen_text, voice_name, model):
+    def infer(self, gen_text, voice_name, model, speed, nfe_step, cfg_strength):
         """
         Generates speech using F5-TTS based on provided text and voice.
 
@@ -356,6 +356,9 @@ class TTSHandler:
             gen_text (str): Text to generate speech from.
             voice_name (str): Voice name.
             model: Loaded model object.
+            speed (float): Speed adjustment factor.
+            nfe_step (float): Steps to denoise
+            cfg_strength (float): Guidance strength
 
         Returns:
             tuple: (sample_rate, audio_data)
@@ -369,12 +372,14 @@ class TTSHandler:
             if ref_audio_path and os.path.exists(ref_audio_path):
                 logging.info(f"Using reference audio for voice '{voice_name}': {ref_audio_path}")
                 final_wave, final_sample_rate, _ = infer_process(
-                    ref_audio_path, ref_text, gen_text, model, self.vocoder, cross_fade_duration=0.15, speed=1.0
+                    ref_audio_path, ref_text, gen_text, model, self.vocoder, cross_fade_duration=0.15,
+                    speed=speed, nfe_step=nfe_step, cfg_strength=cfg_strength
                 )
             else:
                 logging.info(f"No reference audio found for voice '{voice_name}'. Proceeding without it.")
                 final_wave, final_sample_rate, _ = infer_process(
-                    None, ref_text, gen_text, model, self.vocoder, cross_fade_duration=0.15, speed=1.0
+                    None, ref_text, gen_text, model, self.vocoder, cross_fade_duration=0.15,
+                    speed=speed, nfe_step=nfe_step, cfg_strength=cfg_strength
                 )
             logging.debug(f"Generated waveform shape: {final_wave.shape}")
             return final_sample_rate, final_wave.squeeze().cpu().numpy() if isinstance(final_wave, torch.Tensor) else final_wave.squeeze()
@@ -382,7 +387,8 @@ class TTSHandler:
             logging.error(f"Error during inference process: {e}")
             raise RuntimeError("Failed to generate speech.")
 
-    def generate_speech(self, text, voice='Emilia', response_format='mp3', speed=1.0):
+    def generate_speech(self, text, voice='Emilia', response_format='mp3', speed=1.0, nfe_step=32.0,
+            cfg_strength=2.0):
         """
         Generates and saves speech audio from text for a specific voice.
 
@@ -391,11 +397,14 @@ class TTSHandler:
             voice (str): Voice name.
             response_format (str): Audio format (e.g., 'mp3').
             speed (float): Speed adjustment factor.
+            nfe_step (float): Steps to denoise
+            cfg_strength (float): Guidance strength
 
         Returns:
             str: Path to the generated audio file.
         """
-        logging.debug(f"generate_speech called with: text={text}, voice={voice}, response_format={response_format}, speed={speed}")
+        logging.debug(f"generate_speech called with: text={text}, voice={voice}, response_format={response_format}, "
+                      f"speed={speed}, nfe_step={nfe_step}, cfg_strength={cfg_strength}")
 
         if not text:
             logging.error("No text available for TTS generation.")
@@ -411,7 +420,7 @@ class TTSHandler:
             logging.info(f"Using model for voice: {voice}")
 
             # Perform inference
-            sample_rate, audio_data = self.infer(text, voice, model)
+            sample_rate, audio_data = self.infer(text, voice, model, speed, nfe_step, cfg_strength)
             temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=f".{response_format}")
             sf.write(temp_file.name, audio_data, sample_rate)
             logging.info(f"Generated speech saved to {temp_file.name}")

@@ -37,6 +37,8 @@ API_KEY = os.getenv('API_KEY', 'your_api_key_here')
 DEFAULT_VOICE = os.getenv('DEFAULT_VOICE', 'Emilia')
 DEFAULT_RESPONSE_FORMAT = os.getenv('DEFAULT_RESPONSE_FORMAT', 'mp3')
 DEFAULT_SPEED = float(os.getenv('DEFAULT_SPEED', 1.0))
+DEFAULT_NFE_STEP = float(os.getenv('DEFAULT_NFE_STEP', 32.0))
+DEFAULT_CFG_STRENGTH = float(os.getenv('DEFAULT_CFG_STRENGTH', 2.0))
 DEBUG_MODE = os.getenv('DEBUG_MODE', 'false').lower() in ('true', '1', 'yes')
 PORT = args.port
 
@@ -95,6 +97,8 @@ def text_to_speech():
     voice = data.get('voice') or DEFAULT_VOICE  # Use DEFAULT_VOICE if not provided or empty
     response_format = data.get('response_format', DEFAULT_RESPONSE_FORMAT)
     speed = float(data.get('speed', DEFAULT_SPEED))
+    nfe_step = float(data.get('nfe_step', DEFAULT_NFE_STEP))
+    cfg_strength = float(data.get('cfg_strength', DEFAULT_CFG_STRENGTH))
 
     # Determine MIME type based on response format
     mime_type = AUDIO_FORMAT_MIME_TYPES.get(response_format.lower(), "audio/mpeg")
@@ -105,7 +109,9 @@ def text_to_speech():
             text=text,
             voice=voice,
             response_format=response_format,
-            speed=speed
+            speed=speed,
+            nfe_step=nfe_step,
+            cfg_strength=cfg_strength
         )
         return send_file(output_file_path, mimetype=mime_type,
                          as_attachment=True,
